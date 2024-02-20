@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework.Content;
 using System;
 using Microsoft.Xna.Framework.Input;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace TileMap_Editor
 {
@@ -60,10 +61,42 @@ namespace TileMap_Editor
             { "tl", new Vector2(-1, 1) }
         };
 
+        static Tuple<int, int>[] tileAroundPositions = new Tuple<int, int>[21];
+
+        static Stack<Dictionary<string, Tile[]>> UndoStack = new();
+        static Stack<Dictionary<string, Tile[]>> RedoStack = new();
+
         static Vector2 placeTilePosition()
         {
             MouseState mouseState = Mouse.GetState();
             return new Vector2((((int)(mouseState.X - Camera.Position.X) / tileSize) * tileSize), (float)((Math.Floor((mouseState.Y - Camera.Position.Y) / tileSize)) * tileSize));
+        }
+
+        public static Player mapTester = new Player(new Vector2(123,-321), Color.White);
+
+        public static List<Tile> GetTilesAround(Point point)
+        {
+            List<Tile> tilesAround = new List<Tile>();
+            //drawTiles = new();
+
+            Point proposedTile = new();
+            Tile checkTile;
+
+            foreach (Tuple<int, int> tilePos in tileAroundPositions)
+            {
+                proposedTile.X = ((((point.X + tileSize) / tileSize) + tilePos.Item1) * tileSize);
+                proposedTile.Y = ((((point.Y + tileSize) / tileSize) + tilePos.Item2) * tileSize);
+
+                //drawTiles.Add(new Tile(new Vector2(proposedTile.X, proposedTile.Y), Color.Blue));
+
+                checkTile = (tiles.ContainsKey($"{proposedTile.X},{proposedTile.Y}")) ? tiles[$"{proposedTile.X},{proposedTile.Y}"]  : null;//CheckIfTile(proposedTile);
+                if (checkTile != null && checkTile._tileType != -3 && checkTile._tileType != -1)
+                {
+                    tilesAround.Add(checkTile);
+                }
+            }
+
+            return tilesAround;
         }
 
         static void CheckAroundTileAt(string tilePositionKey)
@@ -217,6 +250,7 @@ namespace TileMap_Editor
                         }
                     }
                 }
+
                 foreach (Point Pos in removedTiles)
                 {
                     foreach (Vector2 v in tilesAroundTile.Values)
@@ -247,118 +281,249 @@ namespace TileMap_Editor
             }
         }
 
-        public static void Update()
+        static List<Tile> undoStackLayer = new();
+        static string tileOperation = "";
+
+        public static void Update(GameTime GT)
         {
             if (EditorManager.state != "Paused")
             {
-                if (Mouse.GetState().LeftButton == ButtonState.Pressed)
+                if (EditorManager.editorOptions[EditorManager.editorOption] != "Playing")
                 {
-                    Vector2 newTilePosition;
-                    string tileKeyName;
-                    for (int i = 0; i < drawSize; i++)
+                    if (Mouse.GetState().LeftButton == ButtonState.Pressed)
                     {
-                        for (int j = 0; j < drawSize; j++)
+                        tileOperation = "+";
+                        RedoStack.Clear();
+                        Vector2 newTilePosition;
+                        string tileKeyName;
+                        for (int i = 0; i < drawSize; i++)
                         {
-                            newTilePosition = placeTilePosition() + new Vector2(i*tileSize, j*tileSize);
-                            tileKeyName = $"{newTilePosition.X},{newTilePosition.Y}";
-
-                            if (newTilePosition.X >= 0 && newTilePosition.Y <= 0)
+                            for (int j = 0; j < drawSize; j++)
                             {
-                                if (!tiles.ContainsKey(tileKeyName))
+                                newTilePosition = placeTilePosition() + new Vector2(i * tileSize, j * tileSize);
+                                tileKeyName = $"{newTilePosition.X},{newTilePosition.Y}";
+
+                                if (newTilePosition.X >= 0 && newTilePosition.Y <= 0)
                                 {
-                                    if (Keyboard.GetState().IsKeyDown(Keys.Tab))
+                                    if (!tiles.ContainsKey(tileKeyName))
                                     {
-                                        foreach (KeyValuePair<string, Tile> t in tiles)
+                                        if (Keyboard.GetState().IsKeyDown(Keys.Tab))
                                         {
-                                            if (t.Value._tileType == -1)
+                                            foreach (KeyValuePair<string, Tile> t in tiles)
                                             {
-                                                removedTiles.Add(tiles[t.Key].Position.ToPoint());
-                                                addedTiles.Remove(tiles[t.Key].Position.ToPoint());
-                                                tiles.Remove(t.Key);
+                                                if (t.Value._tileType == -1)
+                                                {
+                                                    removedTiles.Add(tiles[t.Key].Position.ToPoint());
+                                                    addedTiles.Remove(tiles[t.Key].Position.ToPoint());
+                                                    tiles.Remove(t.Key);
+                                                }
                                             }
+                                        }
+
+                                       
+                                        tiles.Add(tileKeyName, new Tile(newTilePosition));
+                                        undoStackLayer.Add(tiles[tileKeyName]);
+
+                                        if (Keyboard.GetState().IsKeyDown(Keys.LeftControl))
+                                        {
+                                            tiles[tileKeyName]._tileType = 0;
+                                        }
+                                        else if (Keyboard.GetState().IsKeyDown(Keys.Tab))
+                                        {
+                                            tiles[tileKeyName]._tileType = -1;
+                                        }
+                                        else if (Keyboard.GetState().IsKeyDown(Keys.LeftShift))
+                                        {
+                                            tiles[tileKeyName]._tileType = -3;
+                                        }
+
+                                        addedTiles.Add(newTilePosition.ToPoint());
+                                        editedTiles = true;
+
+                                        if (newTilePosition.X / tileSize > arrayX)
+                                        {
+                                            arrayX = newTilePosition.X / tileSize;
+                                        }
+                                        if (Math.Abs(newTilePosition.Y) / tileSize > arrayY)
+                                        {
+                                            arrayY = Math.Abs(newTilePosition.Y) / tileSize;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if (Mouse.GetState().RightButton == ButtonState.Pressed)
+                    {
+                        tileOperation = "-";
+                        RedoStack.Clear();
+                        Vector2 newTilePosition;
+                        string tileKeyName;
+                        for (int i = 0; i < drawSize; i++)
+                        {
+                            for (int j = 0; j < drawSize; j++)
+                            {
+                                newTilePosition = placeTilePosition() + new Vector2(i * tileSize, j * tileSize);
+                                tileKeyName = $"{newTilePosition.X},{newTilePosition.Y}";
+
+                                if (newTilePosition.X >= 0 && newTilePosition.Y <= 0)
+                                {
+                                    if (tiles.ContainsKey(tileKeyName))
+                                    {
+                                        removedTiles.Add(tiles[tileKeyName].Position.ToPoint());
+                                        undoStackLayer.Add(tiles[tileKeyName]);
+                                        tiles.Remove(tileKeyName);
+                                        editedTiles = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if (Keyboard.GetState().IsKeyDown(Keys.LeftControl) || Keyboard.GetState().IsKeyDown(Keys.RightControl))
+                    {
+                         if (EditorManager.HaveIJustPressed(Keys.Z))
+                         {
+                            if (Keyboard.GetState().IsKeyDown(Keys.LeftShift) || Keyboard.GetState().IsKeyDown(Keys.RightShift))
+                            {
+                                if (RedoStack.Count > 0)
+                                {
+                                    Dictionary<string, Tile[]> redoTiles = RedoStack.Pop();
+
+                                    string operation = string.Empty;
+
+                                    foreach (string op in redoTiles.Keys)
+                                    {
+                                        operation += op;
+                                    }
+
+                                    foreach (Tile tile in redoTiles[operation])
+                                    {
+                                        if (tile == null) continue;
+                                        Point tilePos = tile.Position.ToPoint();
+                                        switch (operation)
+                                        {
+                                            case "+":
+                                                tiles.Add($"{tilePos.X},{tilePos.Y}", tile);
+                                                removedTiles.Add(tilePos);
+                                                editedTiles = true;
+                                                break;
+                                            case "-":
+                                                tiles.Remove($"{tilePos.X},{tilePos.Y}");
+                                              
+                                                addedTiles.Add(tilePos);
+                                                editedTiles = true;
+                                                break;
                                         }
                                     }
 
-                                    tiles.Add(tileKeyName, new Tile(newTilePosition));
 
-                                    if (Keyboard.GetState().IsKeyDown(Keys.LeftControl))
-                                    {
-                                        tiles[tileKeyName]._tileType = 0;
-                                    }
-                                    else if (Keyboard.GetState().IsKeyDown(Keys.Tab))
-                                    {
-                                        tiles[tileKeyName]._tileType = -1;
-                                    }
-                                    else if (Keyboard.GetState().IsKeyDown(Keys.LeftShift))
-                                    {
-                                        tiles[tileKeyName]._tileType = -3;
-                                    }
 
-                                    addedTiles.Add(newTilePosition.ToPoint());
-                                    editedTiles = true;
-
-                                    if (newTilePosition.X / tileSize > arrayX)
-                                    {
-                                        arrayX = newTilePosition.X / tileSize;
-                                    }
-                                    if (Math.Abs(newTilePosition.Y) / tileSize > arrayY)
-                                    {
-                                        arrayY = Math.Abs(newTilePosition.Y) / tileSize;
-                                    }
+                                    UndoStack.Push(redoTiles);
                                 }
                             }
-                        }
-                    }
-                }
-                else if (Mouse.GetState().RightButton == ButtonState.Pressed)
-                {
-                    Vector2 newTilePosition;
-                    string tileKeyName;
-                    for (int i = 0; i < drawSize; i++)
-                    {
-                        for (int j = 0; j < drawSize; j++)
-                        {
-                            newTilePosition = placeTilePosition() + new Vector2(i * tileSize, j * tileSize);
-                            tileKeyName = $"{newTilePosition.X},{newTilePosition.Y}";
-
-                            if (newTilePosition.X >= 0 && newTilePosition.Y <= 0)
+                            else
                             {
-                                if (tiles.ContainsKey(tileKeyName))
+                                if (UndoStack.Count > 0)
                                 {
-                                    removedTiles.Add(tiles[tileKeyName].Position.ToPoint());
-                                    tiles.Remove(tileKeyName);
-                                    editedTiles = true;
+                                    Dictionary<string, Tile[]> undoTiles = UndoStack.Pop();
+
+                                    string operation = string.Empty;
+
+                                    foreach (string op in undoTiles.Keys)
+                                    {
+                                        operation += op;
+                                    }
+
+                                    foreach (Tile tile in undoTiles[operation])
+                                    {
+                                        if (tile == null) continue;
+                                        Point tilePos = tile.Position.ToPoint();
+                                        switch (operation)
+                                        {
+                                            case "-":
+                                                tiles.Add($"{tilePos.X},{tilePos.Y}", tile);
+                                                addedTiles.Add(tilePos);
+                                                editedTiles = true;
+                                                break;
+                                            case "+":
+                                                tiles.Remove($"{tilePos.X},{tilePos.Y}");
+                                                removedTiles.Add(tilePos);
+                                                editedTiles = true;
+                                                break;
+                                        }
+                                    }
+
+                                    RedoStack.Push(undoTiles);
                                 }
                             }
-                        }
+                         }
                     }
-                }
-                else if (editedTiles)
-                {
-                    ConfigureTileTypes(false);
-                    editedTiles = false;
-                }
+                    else if (editedTiles)
+                    {
+                        if (undoStackLayer.Count > 0)
+                        {
+                            UndoStack.Push(new Dictionary<string, Tile[]>() { { tileOperation, undoStackLayer.ToArray() } });
+                        }
 
-                if (EditorManager.HaveIJustPressed(Keys.OemPlus) || EditorManager.HaveIJustPressed(Keys.Add))
-                {
-                    drawSize++;
+                        undoStackLayer.Clear();
+                        ConfigureTileTypes(false);
+                        editedTiles = false;
+                    }
+
+                    if (EditorManager.HaveIJustPressed(Keys.OemPlus) || EditorManager.HaveIJustPressed(Keys.Add))
+                    {
+                        drawSize++;
+                    }
+                    else if (EditorManager.HaveIJustPressed(Keys.OemMinus) || EditorManager.HaveIJustPressed(Keys.Subtract))
+                    {
+                        drawSize = (drawSize > 1) ? drawSize - 1 : drawSize;
+                    } 
                 }
-                else if (EditorManager.HaveIJustPressed(Keys.OemMinus) || EditorManager.HaveIJustPressed(Keys.Subtract))
+                else
                 {
-                    drawSize =  (drawSize > 1) ? drawSize - 1 : drawSize;
+                    mapTester.Update(GT);
+                    Debug.WriteLine(mapTester.Position);
                 }
             }
         }
 
         public static void LoadContent(ContentManager Content)
         {
+            int lowerBound = -3;
+            int upperBound = 1;
+
+            int count = 0;
+            for (int i = lowerBound; i < (upperBound + 1); i++)
+            {
+                for (int j = lowerBound; j < (upperBound + 1); j++)
+                {
+                    if (i == lowerBound || i == upperBound)
+                    {
+                        if (j == lowerBound || j == upperBound)
+                        {
+                            continue;
+                        }
+                    }
+
+                    tileAroundPositions[count] = Tuple.Create(i, j);
+                    count++;
+                }
+            }
+
+
             placeTileTexture = Content.Load<Texture2D>("placeTile");
             Tile.LoadTileTexture(Content, "UnVincedTilesV2");
+
+            //Player.LoadPlayer(Content, "player2.0");
         }
 
         public static void Draw(SpriteBatch SB)
         {
-          
+            if (EditorManager.editorOptions[EditorManager.editorOption] == "Playing")
+            {
+                mapTester.Draw(SB);
+            }
+
             SB.Draw(placeTileTexture, new Vector2(), null,Color.White, 0, Vector2.Zero, TileMapEditor.tileSize / 64.0f, SpriteEffects.None, 0f);
 
             foreach (Tile t in tiles.Values)

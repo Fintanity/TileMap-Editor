@@ -11,6 +11,8 @@ namespace TileMap_Editor
         private SpriteBatch _spriteBatch;
 
         public static int screenWidth, screenHeight;
+        public static float gravityAmount = 1f;
+        public static float airResistance = 1f;
 
         public Game1()
         {
@@ -36,14 +38,15 @@ namespace TileMap_Editor
         {
             _spriteBatch = new SpriteBatch(GraphicsDevice);
 
+            Player.LoadPlayer(Content, "player2.0");
             TileMapEditor.LoadContent(Content);
             EditorManager.LoadContent(Content);
         }
 
         protected override void Update(GameTime gameTime)
         {
-            Camera.Update();
-            TileMapEditor.Update();
+            Camera.Update(TileMapEditor.mapTester);
+            TileMapEditor.Update(gameTime);
             EditorManager.Update();
 
             base.Update(gameTime);
@@ -53,7 +56,7 @@ namespace TileMap_Editor
         {
             GraphicsDevice.Clear(Color.Beige);
 
-            _spriteBatch.Begin(transformMatrix: Camera.Transform);
+            _spriteBatch.Begin(transformMatrix: Camera.Transform, samplerState: SamplerState.PointClamp);
             
             TileMapEditor.Draw(_spriteBatch);
             EditorManager.Draw(_spriteBatch);

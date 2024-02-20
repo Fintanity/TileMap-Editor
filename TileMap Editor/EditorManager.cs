@@ -21,14 +21,13 @@ namespace TileMap_Editor
         static Color overlayColor = new Color(Color.Black, 0.2f);
 
         static string[] MapsToLoad;
-        static string[] menuOptions = {"New Tile Map", "Load Tile Map", "Save Tile Map"};
-        static string[] editorOptions = { "General", "Loading", "Saving" };
+        static string[] menuOptions = {"New Tile Map", "Load Tile Map", "Save Tile Map", "Play TileMap"};
+        public static string[] editorOptions = { "General", "Loading", "Saving", "Playing" };
         static string lastKeyPushed = "";
         static string fileString = "", tileMapFileExt = ".tilemap", tileMapsFileFolder = "\\Maps";
-        static int currentOption = 0, editorOption = 0;
+        public static int currentOption = 0, editorOption = 0;
         static float menuY = -Game1.screenHeight + TileMapEditor.tileSize - (Camera.Position.Y - (Game1.screenHeight - TileMapEditor.tileSize));
         static float menuX = -Camera.Position.X;
-        static float cameraSpeedTextAlpha = 0;
 
         static Dictionary<string, char> allowedKeys = new Dictionary<string, char>()
         {
@@ -123,12 +122,29 @@ namespace TileMap_Editor
                     MapsToLoad = GetSavedMaps();
                     currentOption = 0;
                     break;
-            }
-        }
+                case "Play TileMap":
+                    Tile[,] TileMap = TileMapEditor.ToTileArray();
+                    TileMapEditor.tileSize = TileMapEditor.baseTileSize;
 
-        static Vector2 CameraSpeedText()
-        {
-            return new Vector2(menuX + (0.99f * Game1.screenWidth - menuFont.MeasureString($"Camera Speed: {Camera.moveSpeed}").X) - Camera.Position.X, menuY + Game1.screenHeight * 0.01f - Camera.Position.Y + Camera.bottomLeftTile);
+                    Camera.bottomLeftTile = (Game1.screenHeight - TileMapEditor.tileSize);
+                    menuY = -Game1.screenHeight + TileMapEditor.tileSize - (Camera.Position.Y - (Game1.screenHeight - TileMapEditor.tileSize));
+                    menuX = -Camera.Position.X;
+                    ReloadMap(TileMap);
+
+                    foreach (Tile t  in TileMapEditor.tiles.Values) 
+                    {
+                        if (t._tileType == -1)
+                        {
+                            //TileMapEditor.mapTester.Position =  t.Position;
+                            TileMapEditor.mapTester = new Player(t.Position, Color.White);
+                            Debug.WriteLine("Found SP");
+                            break;
+                        }
+                    }
+                    //state = "Playing";
+                    editorOption = 3;
+                    break;
+            }
         }
 
         static void LoadMap(string file)
@@ -381,6 +397,36 @@ namespace TileMap_Editor
                         state = "Paused";
                     }
                     break;
+
+                case "Playing":
+                    if (HaveIJustPressed(Keys.Escape))
+                    {
+                        state = (state == "Paused") ? "Playing" : "Paused";
+                        if (state == "Paused")
+                        {
+                            menuY = -Game1.screenHeight + TileMapEditor.tileSize - ((int)Camera.Position.Y - (Game1.screenHeight - TileMapEditor.tileSize));
+                            menuX = -Camera.Position.X;
+                            currentOption = 0;
+                        }
+                    }
+
+                    if (state == "Paused")
+                    {
+                        if (HaveIJustPressed(Keys.Up))
+                        {
+                            currentOption = (currentOption == 0) ? menuOptions.Length - 1 : currentOption - 1;
+                        }
+                        else if (HaveIJustPressed(Keys.Down))
+                        {
+                            currentOption = (currentOption == menuOptions.Length - 1) ? 0 : currentOption + 1;
+                        }
+
+                        if (HaveIJustPressed(Keys.Enter))
+                        {
+                            Do(currentOption);
+                        }
+                    }
+                    break;
             }
 
             LastKeyDown();
@@ -455,16 +501,31 @@ namespace TileMap_Editor
                         loadCount++;
                     }
                     break;
+
+                case "Playing":
+                    if (state == "Paused")
+                    {
+                        int count = 1;
+                        foreach (string opt in menuOptions)
+                        {
+                            SB.DrawString(menuFont, opt,
+                                new Vector2(15 - Camera.Position.X, menuY + 15 * count + (count - 1) * menuFont.MeasureString(opt).Y)
+                                , (menuOptions[currentOption] == opt) ? Color.Red : Color.White);
+                            count++;
+                        }
+                    }
+                    break;
             }
         }
         
         public static void LastKeyDown()
         {
-            if (Keyboard.GetState().GetPressedKeyCount() == 0)
+            if (!Keyboard.GetState().IsKeyDown(lastKeyDown))
             {
                 lastKeyDown = Keys.None;
             }
         }
+
 
         public static bool HaveIJustPressed(Keys keyToCheck)
         {
